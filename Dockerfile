@@ -1,13 +1,13 @@
-FROM php:7.0-fpm
-MAINTAINER Kristoph Junge <kristoph.junge@gmail.com>
+FROM php:7.2-fpm-stretch
+MAINTAINER Christian Bernard <cmbernard333@gmail.com>
 
 # Change UID and GID of www-data user to match host privileges
 RUN usermod -u 999 www-data && \
     groupmod -g 999 www-data
 
 # Utilities
-RUN apt-get update && \
-    apt-get -y install apt-transport-https ca-certificates git curl --no-install-recommends && \
+RUN apt update && \
+    apt -y install apt-transport-https ca-certificates git curl make dirmngr --no-install-recommends && \
     rm -r /var/lib/apt/lists/*
 
 # MySQL PHP extension
@@ -20,16 +20,16 @@ RUN curl -s -o /tmp/go-pear.phar http://pear.php.net/go-pear.phar && \
     pear install mail Net_SMTP
 
 # Imagick with PHP extension
-RUN apt-get update && apt-get install -y imagemagick libmagickwand-6.q16-dev --no-install-recommends && \
+RUN apt update && apt install -y imagemagick libmagickwand-dev --no-install-recommends && \
     ln -s /usr/lib/x86_64-linux-gnu/ImageMagick-6.8.9/bin-Q16/MagickWand-config /usr/bin/ && \
-    pecl install imagick-3.4.0RC6 && \
+    pecl install imagick-3.4.3 && \
     echo "extension=imagick.so" > /usr/local/etc/php/conf.d/ext-imagick.ini && \
     rm -rf /var/lib/apt/lists/*
 
 # Intl PHP extension
-RUN apt-get update && apt-get install -y libicu-dev g++ --no-install-recommends && \
+RUN apt update && apt install -y libicu-dev g++ --no-install-recommends && \
     docker-php-ext-install intl && \
-    apt-get install -y --auto-remove libicu52 g++ && \
+    apt install -y --auto-remove libicu57 g++ && \
     rm -rf /var/lib/apt/lists/*
 
 # APC PHP extension
@@ -39,8 +39,8 @@ RUN pecl install apcu && \
     docker-php-ext-enable apc --ini-name 20-docker-php-ext-apc.ini
 
 # Nginx
-RUN apt-get update && \
-    apt-get -y install nginx && \
+RUN apt update && \
+    apt -y install nginx && \
     rm -r /var/lib/apt/lists/*
 COPY config/nginx/* /etc/nginx/
 
@@ -51,28 +51,41 @@ RUN mkdir -p /var/run/php7-fpm/ && \
     chown www-data:www-data /var/run/php7-fpm/
 
 # Supervisor
-RUN apt-get update && \
-    apt-get install -y supervisor --no-install-recommends && \
+RUN apt update && \
+    apt install -y supervisor --no-install-recommends && \
     rm -r /var/lib/apt/lists/*
 COPY config/supervisor/supervisord.conf /etc/supervisor/conf.d/
 COPY config/supervisor/kill_supervisor.py /usr/bin/
 
 # NodeJS
-RUN curl -sL https://deb.nodesource.com/setup_4.x | bash - && \
-    apt-get install -y nodejs --no-install-recommends
+RUN apt update && \
+    apt install -y gnupg2 && \
+    curl -sL https://deb.nodesource.com/setup_8.x | bash - && \
+    apt install -y nodejs node-gyp --no-install-recommends
 
 # Parsoid
 RUN useradd parsoid --no-create-home --home-dir /usr/lib/parsoid --shell /usr/sbin/nologin
-RUN apt-key advanced --keyserver pgp.mit.edu --recv-keys 90E9F83F22250DD7 && \
-    echo "deb https://releases.wikimedia.org/debian jessie-mediawiki main" > /etc/apt/sources.list.d/parsoid.list && \
-    apt-get update && \
-    apt-get -y install parsoid --no-install-recommends
+# RUN apt-key adv --keyserver keys.gnupg.net --recv-keys 90E9F83F22250DD7
+# gpg keys listed at https://github.com/nodejs/node#release-team
+RUN set -ex \
+  && for key in \
+    90E9F83F22250DD7 \
+  ; do \
+    apt-key adv --keyserver pgp.mit.edu --recv-keys "$key" || \
+    apt-key adv --keyserver keyserver.pgp.com --recv-keys "$key" || \
+    apt-key adv --keyserver ha.pool.sks-keyservers.net --recv-keys "$key" ; \
+  done
+RUN echo "deb https://releases.wikimedia.org/debian jessie-mediawiki main" | tee /etc/apt/sources.list.d/parsoid.list 
+RUN apt update && \
+    apt -y install parsoid --no-install-recommends
 COPY config/parsoid/config.yaml /usr/lib/parsoid/src/config.yaml
-ENV NODE_PATH /usr/lib/parsoid/node_modules:/usr/lib/parsoid/src
+
+# Setup Node Path
+ENV NODE_PATH /usr/lib/parsoid/node_modules:/usr/lib/parsoid/src:/usr/lib/parsoid/src/api
 
 # MediaWiki
 ARG MEDIAWIKI_VERSION_MAJOR=1
-ARG MEDIAWIKI_VERSION_MINOR=30
+ARG MEDIAWIKI_VERSION_MINOR=31
 ARG MEDIAWIKI_VERSION_BUGFIX=0
 
 RUN curl -s -o /tmp/keys.txt https://www.mediawiki.org/keys/keys.txt && \
